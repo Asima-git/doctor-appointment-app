@@ -7,7 +7,8 @@ const Doctors = () => {
   const [filterDoc,setFilterDoc] = useState([]);
   const [showFilter,setShowFilter] = useState(false)
   const navigate = useNavigate();
-  const {doctors} = useContext(AppContext);
+  const {doctors,doctorList,getDoctorsData} = useContext(AppContext);
+
   const applyFilter = ()=>{
     if(speciality){
       setFilterDoc(doctors.filter(doc=> doc.speciality === speciality))
@@ -18,6 +19,12 @@ const Doctors = () => {
   useEffect(()=>{
     applyFilter();
   },[doctors,speciality])
+
+
+  useEffect(()=>{
+    getDoctorsData();
+    console.log(doctorList);
+   },[])
   return (
     <div>
       <p className='text-gray-600'>Browse through the doctors specialist.</p>

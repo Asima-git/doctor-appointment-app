@@ -1,13 +1,16 @@
 import React, { useContext, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { AppContext } from '../context/AppContext';
 import { assets } from '../assets/assets';
 import RelatedDoctors from '../components/RelatedDoctors';
+import { toast } from 'react-toastify';
+import axios from 'axios';
 
 const Appointment = () => {
   const {docId} = useParams()
-  const {doctors,currencySymbol} = useContext(AppContext);
+  const {doctors,currencySymbol,backendURL,token,getDoctorsData} = useContext(AppContext);
   const dayOfWeek = ['SUN','MON','TUE','WED','THU','FRI','SAT']
+  const navigate = useNavigate()
   const [docInfo,setDocInfo] = useState(null);
   const [docSlot,setDocSlot] = useState([]);
   const [slotIndex,setSlotIndex] = useState(0);
@@ -24,44 +27,98 @@ const Appointment = () => {
     let today = new Date(); // Get the current date
     
     for (let i = 0; i < 7; i++) { // Loop for the next 7 days
-      // Getting the date for the current index
-      let currentDate = new Date(today);
-      currentDate.setDate(today.getDate() + i);
-  
-      // Setting end time for the day
-      let endTime = new Date(currentDate);
-      endTime.setHours(21, 0, 0, 0);
-  
-      // Setting hours and minutes for the start of the day
-      if (today.getDate() === currentDate.getDate()) {
-        currentDate.setHours(Math.max(currentDate.getHours() + 1, 10));
-        currentDate.setMinutes(currentDate.getMinutes() > 30 ? 30 : 0);
-      } else {
-        currentDate.setHours(10);
-        currentDate.setMinutes(0);
-      }
-  
-      let timeSlots = [];
-      // Generate time slots until the end of the day
-      while (currentDate < endTime) {
-        let formattedTime = currentDate.toLocaleString([], { hour: '2-digit', minute: '2-digit' });
-        // Add slot
-        timeSlots.push({
-          datetime: new Date(currentDate),
-          time: formattedTime,
-        });
-        // Increment time by 30 minutes
-        currentDate.setMinutes(currentDate.getMinutes() + 30);
-      }
-      // Update state with new slots
-      setDocSlot(prev => [...prev, timeSlots]);
+        // Creating a fresh date for each day
+        let currentDate = new Date();
+        currentDate.setDate(today.getDate() + i);
+
+        // Setting end time for the day (9 PM)
+        let endTime = new Date(currentDate);
+        endTime.setHours(21, 0, 0, 0);
+
+        // Setting the start time correctly
+        if (i === 0) {  // If it's today
+            currentDate.setHours(Math.max(today.getHours() + 1, 10));
+            currentDate.setMinutes(today.getMinutes() > 30 ? 30 : 0);
+        } else {  // For future days, start at 10 AM
+            currentDate.setHours(10);
+            currentDate.setMinutes(0);
+        }
+
+        let timeSlots = [];
+        while (currentDate < endTime) {
+            let formattedTime = currentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            let day = currentDate.getDate();
+            let month = currentDate.getMonth() + 1;
+            let year = currentDate.getFullYear();
+            const slotDate = `${day}_${month}_${year}`;
+            const slotTime = formattedTime;
+
+            // Ensure `docInfo.slots_books` exists
+            if (!docInfo.slots_books) {
+                docInfo.slots_books = {};
+            }
+
+            // Check if the slot is available
+            const isSlotAvailable = !(
+                docInfo.slots_books[slotDate] &&
+                docInfo.slots_books[slotDate].includes(slotTime)
+            );
+
+            if (isSlotAvailable) {
+                timeSlots.push({
+                    datetime: new Date(currentDate),
+                    time: formattedTime,
+                });
+            }
+
+            // Increment by 30 minutes
+            currentDate.setMinutes(currentDate.getMinutes() + 30);
+        }
+
+        // Update state with new slots
+        setDocSlot(prev => [...prev, timeSlots]);
     }
-  };
+};
+
   
   useEffect(()=>{
   fetchDoctInfo()
   },[doctors,docId])
 
+  const bookAppointment = async () => {
+    if (!token) {
+      toast.warn('Login for booking an appointment');
+      return navigate('/login');
+    }
+    
+    try {
+      const date = docSlot[slotIndex][0].datetime;
+      let day = date.getDate();
+      let month = date.getMonth() + 1;
+      let year = date.getFullYear();
+      const slotDate = `${day}_${month}_${year}`;
+  
+      const { data } = await axios.post(
+        `${backendURL}/api/user/book-appointment`,
+        { docId, slotDate, slotTime },
+        { headers: { token: token } }
+      );
+  
+      if (data.success) {
+        toast.success(data.message);
+        getDoctorsData();
+        navigate('/my-appointments');
+      } else {
+        toast.error(data.message); // This will catch API errors
+      }
+    } catch (error) {
+      console.error(error);
+      if (error.response) {
+        toast.error(error.response.data.message || "Something went wrong!");
+      } 
+    }
+  };
+  
   useEffect(()=>{
     getAvailableSlots()
     },[docInfo])
@@ -116,7 +173,7 @@ const Appointment = () => {
         ))
       }
     </div>
-    <button className='bg-primary text-white text-sm font-light px-14 py-3 rounded-full mt-5'>Book an appointment</button>
+    <button onClick={bookAppointment} className='bg-primary text-white text-sm font-light px-14 py-3 rounded-full mt-5'>Book an appointment</button>
     </div>
      {/** Listing Realted Doctors */}
      <RelatedDoctors docId={docId} speciality={docInfo.speciality}/>
